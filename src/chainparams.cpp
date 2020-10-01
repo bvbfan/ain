@@ -114,7 +114,7 @@ public:
         consensus.BIP34Hash = uint256();
         consensus.BIP65Height = 0; // 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
         consensus.BIP66Height = 0; // 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
-        consensus.AMKHeight = 356500;
+        consensus.AMKHeight = 150;
 
         consensus.pos.diffLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
 //        consensus.pos.nTargetTimespan = 14 * 24 * 60 * 60; // two weeks
@@ -203,6 +203,7 @@ public:
         vMasternodes.push_back({"8PuErAcazqccCVzRcc8vJ3wFaZGm4vFbLe", "8J846CKFF83Jcj5m4EReJmxiaJ6Jy1Y6Ea"});
         vMasternodes.push_back({"8RPZm7SVUNhGN1RgGY3R92rvRkZBwETrCX", "8bzHwhaF2MaVs4owRvpWtZQVug3mKuJji2"});
         vMasternodes.push_back({"8KRsoeCRKHUFFmAGGJbRBAgraXiUPUVuXn", "8cHaEaqRsz7fgW1eAjeroB5Bau5NfJNbtk"});
+        vMasternodes.push_back({"8PdVBmfUnNzpiGkhwSnnkEsRp3Q6tZMCCb", "8HYKFMhQhDvr1X3PWmsKuMxmTyTPt6GwSB"});
 
         std::vector<CTxOut> initdist;
         initdist.push_back(CTxOut(58800000 * COIN, GetScriptForDestination(DecodeDestination("8ZWWN1nX8drxJBSMG1VS9jH4ciBSvA9nxp", *this))));
@@ -213,7 +214,10 @@ public:
         initdist.push_back(CTxOut(14700000 * COIN, GetScriptForDestination(DecodeDestination("dMty9CfknKEaXqJuSgYkvvyF6UB6ffrZXG", *this))));
         initdist.push_back(CTxOut(64680000 * COIN, GetScriptForDestination(DecodeDestination("dZcY1ZNm5bkquz2J74smKqokuPoVpPvGWu", *this))));
         initdist.push_back(CTxOut(235200000 * COIN, GetScriptForDestination(DecodeDestination("dP8dvN5pnwbsxFcfN9DyqPVZi1fVHicDd2", *this))));
-        initdist.push_back(CTxOut(117600000 * COIN, GetScriptForDestination(DecodeDestination("dMs1xeSGZbGnTJWqTwjR4mcjp2egpEXG6M", *this))));
+
+        // IMPORTANT: Below address is for testing, the private key is public, do not store any actual funds on mainnet
+        // Private key: L2rp5NbpzbViYGBmM4kf6sCdGVf3KxQKiVEaKL9B8Y2yDEcMbjHv
+        initdist.push_back(CTxOut(117600000 * COIN, GetScriptForDestination(DecodeDestination("daJa96cxUfWNRJpNwZQLVwXbYtohvtbvRg", *this))));
         {
             CAmount sum_initdist{0};
             for (CTxOut const & out : initdist)
