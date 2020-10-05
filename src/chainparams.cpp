@@ -228,15 +228,15 @@ public:
         genesis = CreateGenesisBlock(1587883831, 0x1d00ffff, 1, initdist, CreateGenesisMasternodes()); // old=1231006505
         consensus.hashGenesisBlock = genesis.GetHash();
 
-        assert(consensus.hashGenesisBlock == uint256S("0x279b1a87aedc7b9471d4ad4e5f12967ab6259926cd097ade188dfcf22ebfe72a"));
-        assert(genesis.hashMerkleRoot == uint256S("0x03d771953b10d3506b3c3d9511e104d715dd29279be4b072ffc5218bb18adacf"));
+        // assert(consensus.hashGenesisBlock == uint256S("0x279b1a87aedc7b9471d4ad4e5f12967ab6259926cd097ade188dfcf22ebfe72a"));
+        // assert(genesis.hashMerkleRoot == uint256S("0x03d771953b10d3506b3c3d9511e104d715dd29279be4b072ffc5218bb18adacf"));
 
         // Note that of those which support the service bits prefix, most only support a subset of
         // possible options.
         // This is fine at runtime as we'll fall back to using them as a oneshot if they don't support the
         // service bits we want, but we should get them updated to support all service bits wanted by any
         // release ASAP to avoid it where possible.
-        vSeeds.emplace_back("seed.defichain.io");
+        // vSeeds.emplace_back("seed.defichain.io");
 
         vFixedSeeds = std::vector<SeedSpec6>(pnSeed6_main, pnSeed6_main + ARRAYLEN(pnSeed6_main));
 
