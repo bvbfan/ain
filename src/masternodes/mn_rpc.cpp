@@ -23,6 +23,7 @@
 
 //#ifdef ENABLE_WALLET
 #include <wallet/coincontrol.h>
+#include <wallet/ismine.h>
 #include <wallet/rpcwallet.h>
 #include <wallet/wallet.h>
 //#endif
@@ -582,10 +583,6 @@ UniValue createtoken(const JSONRPCRequest& request) {
     }
     pwallet->BlockUntilSyncedToCurrentChain();
 
-    if (::ChainActive().Tip()->height < Params().GetConsensus().AMKHeight) {
-        throw JSONRPCError(RPC_TRANSACTION_REJECTED, "No tokenization transaction before block height " + std::to_string(Params().GetConsensus().AMKHeight));
-    }
-
     RPCTypeCheck(request.params, {UniValue::VOBJ, UniValue::VARR}, true);
     if (request.params[0].isNull()) {
         throw JSONRPCError(RPC_INVALID_PARAMETER,
@@ -606,10 +603,10 @@ UniValue createtoken(const JSONRPCRequest& request) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "collateralAddress (" + collateralAddress + ") does not refer to any valid address");
     }
 
-    int height{0};
+    int targetHeight;
     {
         LOCK(cs_main);
-        height = ::ChainActive().Tip()->height + 1;
+        targetHeight = ::ChainActive().Height() + 1;
     }
 
     CToken token;
@@ -628,7 +625,7 @@ UniValue createtoken(const JSONRPCRequest& request) {
     CScript scriptMeta;
     scriptMeta << OP_RETURN << ToByteVector(metadata);
 
-    const auto txVersion = GetTransactionVersion(::ChainActive().Height());
+    const auto txVersion = GetTransactionVersion(targetHeight);
     CMutableTransaction rawTx(txVersion);
 
     if(metaObj["isDAT"].getBool())
@@ -653,7 +650,7 @@ UniValue createtoken(const JSONRPCRequest& request) {
     else
         rawTx.vin = GetInputs(txInputs.get_array());
 
-    rawTx.vout.push_back(CTxOut(GetTokenCreationFee(height), scriptMeta));
+    rawTx.vout.push_back(CTxOut(GetTokenCreationFee(targetHeight), scriptMeta));
     rawTx.vout.push_back(CTxOut(GetTokenCollateralAmount(), GetScriptForDestination(collateralDest)));
 
     rawTx = fund(rawTx, request, pwallet);
@@ -662,8 +659,8 @@ UniValue createtoken(const JSONRPCRequest& request) {
     {
         LOCK(cs_main);
         CCustomCSView mnview_dummy(*pcustomcsview); // don't write into actual DB
-        const auto res = ApplyCreateTokenTx(mnview_dummy, g_chainstate->CoinsTip(), CTransaction(rawTx), height,
-                                      ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, token}));
+        const auto res = ApplyCreateTokenTx(mnview_dummy, g_chainstate->CoinsTip(), CTransaction(rawTx), targetHeight,
+                                      ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, token}), Params().GetConsensus());
         if (!res.ok) {
             throw JSONRPCError(RPC_INVALID_REQUEST, "Execution test failed:\n" + res.msg);
         }
@@ -714,10 +711,6 @@ UniValue updatetoken(const JSONRPCRequest& request) {
     }
     pwallet->BlockUntilSyncedToCurrentChain();
 
-    if (::ChainActive().Tip()->height < Params().GetConsensus().AMKHeight) {
-        throw JSONRPCError(RPC_TRANSACTION_REJECTED, "No tokenization transaction before block height " + std::to_string(Params().GetConsensus().AMKHeight));
-    }
-
     RPCTypeCheck(request.params, {UniValue::VOBJ, UniValue::VARR}, true);
     if (request.params[0].isNull()) {
         throw JSONRPCError(RPC_INVALID_PARAMETER,
@@ -735,6 +728,7 @@ UniValue updatetoken(const JSONRPCRequest& request) {
     std::string const tokenStr = trim_ws(metaObj["token"].getValStr());
     CTxDestination ownerDest;
     uint256 creationTx{};
+    int targetHeight;
     {
         LOCK(cs_main);
         DCT_ID id;
@@ -748,9 +742,10 @@ UniValue updatetoken(const JSONRPCRequest& request) {
         LOCK(pwallet->cs_wallet);
         auto tokenImpl = static_cast<CTokenImplementation const& >(*token);
         creationTx = tokenImpl.creationTx;
+        targetHeight = ::ChainActive().Height() + 1;
     }
 
-    const auto txVersion = GetTransactionVersion(::ChainActive().Height());
+    const auto txVersion = GetTransactionVersion(targetHeight);
     CMutableTransaction rawTx(txVersion);
 
     for(std::set<CScript>::iterator it = Params().GetConsensus().foundationMembers.begin(); it != Params().GetConsensus().foundationMembers.end() && rawTx.vin.size() == 0; it++)
@@ -785,8 +780,8 @@ UniValue updatetoken(const JSONRPCRequest& request) {
     {
         LOCK(cs_main);
         CCustomCSView mnview_dummy(*pcustomcsview); // don't write into actual DB
-        const auto res = ApplyUpdateTokenTx(mnview_dummy, ::ChainstateActive().CoinsTip(), CTransaction(rawTx), ::ChainActive().Tip()->height + 1,
-                                      ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, creationTx, metaObj["isDAT"].getBool()}));
+        const auto res = ApplyUpdateTokenTx(mnview_dummy, ::ChainstateActive().CoinsTip(), CTransaction(rawTx), targetHeight,
+                                      ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, creationTx, metaObj["isDAT"].getBool()}), Params().GetConsensus());
         if (!res.ok) {
             throw JSONRPCError(RPC_INVALID_REQUEST, "Execution test failed:\n" + res.msg);
         }
@@ -806,6 +801,7 @@ UniValue tokenToJSON(DCT_ID const& id, CToken const& token, bool verbose) {
         tokenObj.pushKV("isDAT", token.IsDAT());
         if (id >= CTokensView::DCT_ID_START) {
             CTokenImplementation const& tokenImpl = static_cast<CTokenImplementation const&>(token);
+            tokenObj.pushKV("minted", ValueFromAmount(tokenImpl.minted));
             tokenObj.pushKV("creationTx", tokenImpl.creationTx.ToString());
             tokenObj.pushKV("creationHeight", tokenImpl.creationHeight);
             tokenObj.pushKV("destructionTx", tokenImpl.destructionTx.ToString());
@@ -956,10 +952,6 @@ UniValue minttokens(const JSONRPCRequest& request) {
     }
     pwallet->BlockUntilSyncedToCurrentChain();
 
-    if (::ChainActive().Tip()->height < Params().GetConsensus().AMKHeight) {
-        throw JSONRPCError(RPC_TRANSACTION_REJECTED, "No tokenization transaction before block height " + std::to_string(Params().GetConsensus().AMKHeight));
-    }
-
     const CBalances minted = DecodeAmounts(pwallet->chain(), request.params[0], "");
     UniValue txInputs = request.params[1];
     if (txInputs.isNull())
@@ -967,7 +959,13 @@ UniValue minttokens(const JSONRPCRequest& request) {
         txInputs.setArray();
     }
 
-    const auto txVersion = GetTransactionVersion(::ChainActive().Height());
+    int targetHeight;
+    {
+        LOCK(cs_main);
+        targetHeight = ::ChainActive().Height() + 1;
+    }
+
+    const auto txVersion = GetTransactionVersion(targetHeight);
     CMutableTransaction rawTx(txVersion);
 
     // auth
@@ -1017,8 +1015,8 @@ UniValue minttokens(const JSONRPCRequest& request) {
     {
         LOCK(cs_main);
         CCustomCSView mnview_dummy(*pcustomcsview); // don't write into actual DB
-        const auto res = ApplyMintTokenTx(mnview_dummy, g_chainstate->CoinsTip(), CTransaction(rawTx),
-                                                 ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, minted }));
+        const auto res = ApplyMintTokenTx(mnview_dummy, g_chainstate->CoinsTip(), CTransaction(rawTx), targetHeight,
+                                                 ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, minted }), Params().GetConsensus());
         if (!res.ok) {
             throw JSONRPCError(RPC_INVALID_REQUEST, "Execution test failed:\n" + res.msg);
         }
@@ -1078,6 +1076,8 @@ UniValue accountToJSON(CScript const& owner, CTokenAmount const& amount, bool ve
 }
 
 UniValue listaccounts(const JSONRPCRequest& request) {
+    CWallet* const pwallet = GetWallet(request);
+
     RPCHelpMan{"listaccounts",
                "\nReturns information about all accounts on chain.\n",
                {
@@ -1096,6 +1096,8 @@ UniValue listaccounts(const JSONRPCRequest& request) {
                                    "Flag for verbose list (default = true), otherwise limited objects are listed"},
                        {"indexed_amounts", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED,
                         "Format of amounts output (default = false): (true: {tokenid:amount}, false: \"amount@tokenid\")"},
+                       {"is_mine_only", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED,
+                        "Get balances about all accounts belonging to the wallet"},
                },
                RPCResult{
                        "{id:{...},...}     (array) Json object with accounts information\n"
@@ -1141,13 +1143,22 @@ UniValue listaccounts(const JSONRPCRequest& request) {
     if (request.params.size() > 2) {
         indexed_amounts = request.params[2].get_bool();
     }
+    bool isMineOnly = false;
+    if (request.params.size() > 3) {
+        isMineOnly = request.params[3].get_bool();
+    }
 
 
     UniValue ret(UniValue::VARR);
 
     LOCK(cs_main);
     pcustomcsview->ForEachBalance([&](CScript const & owner, CTokenAmount const & balance) {
-        ret.push_back(accountToJSON(owner, balance, verbose, indexed_amounts));
+        if (isMineOnly) {
+            if (IsMine(*pwallet, owner) == ISMINE_SPENDABLE)
+                ret.push_back(accountToJSON(owner, balance, verbose, indexed_amounts));
+        } else {
+            ret.push_back(accountToJSON(owner, balance, verbose, indexed_amounts));
+        }
 
         limit--;
         return limit != 0;
@@ -1238,6 +1249,92 @@ UniValue getaccount(const JSONRPCRequest& request) {
     return ret;
 }
 
+UniValue gettokenbalances(const JSONRPCRequest& request) {
+    CWallet* const pwallet = GetWallet(request);
+
+    RPCHelpMan{"gettokenbalances",
+               "\nReturns the balances of all accounts that belong to the wallet.\n",
+               {
+                    {"pagination", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "",
+                        {
+                            {"start", RPCArg::Type::STR, RPCArg::Optional::OMITTED,
+                                 "Optional first key to iterate from, in lexicographical order."
+                                 "Typically it's set to last tokenID from previous request."},
+                            {"including_start", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED,
+                                 "If true, then iterate including starting position. False by default"},
+                            {"limit", RPCArg::Type::NUM, RPCArg::Optional::OMITTED,
+                                 "Maximum number of tokens to return, 100 by default"},
+                        },
+                    },
+                    {"indexed_amounts", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED,
+                        "Format of amounts output (default = false): (true: obj = {tokenid:amount,...}, false: array = [\"amount@tokenid\"...])"},
+                },
+                RPCResult{
+                       "{...}     (array) Json object with balances information\n"
+                },
+                RPCExamples{
+                       HelpExampleCli("gettokenbalances", "")
+                },
+    }.Check(request);
+
+    // parse pagination
+    size_t limit = 100;
+    DCT_ID start = {};
+    bool including_start = true;
+    {
+        if (request.params.size() > 0) {
+            UniValue paginationObj = request.params[0].get_obj();
+            if (!paginationObj["limit"].isNull()) {
+                limit = (size_t) paginationObj["limit"].get_int64();
+            }
+            if (!paginationObj["start"].isNull()) {
+                including_start = false;
+                start.v = (uint32_t) paginationObj["start"].get_int64();
+            }
+            if (!paginationObj["including_start"].isNull()) {
+                including_start = paginationObj["including_start"].getBool();
+            }
+            if (!including_start) {
+                start.v++;
+            }
+        }
+        if (limit == 0) {
+            limit = std::numeric_limits<decltype(limit)>::max();
+        }
+    }
+    bool indexed_amounts = false;
+    if (request.params.size() > 1) {
+        indexed_amounts = request.params[1].get_bool();
+    }
+
+    UniValue ret(UniValue::VARR);
+    if (indexed_amounts) {
+        ret.setObject();
+    }
+
+    LOCK(cs_main);
+    CBalances totalBalances;
+    CScript oldOwner;
+    pcustomcsview->ForEachBalance([&](CScript const & owner, CTokenAmount const & balance) {
+        if (oldOwner == owner) {
+            totalBalances.Add(balance);
+        } else if (IsMine(*pwallet, owner) == ISMINE_SPENDABLE) {
+            oldOwner = owner;
+            totalBalances.Add(balance);
+        }
+        return true;
+    }, BalanceKey{});
+    auto it = totalBalances.balances.find(start);
+    for (int i = 0; it != totalBalances.balances.end() && i < limit; it++, i++) {
+        CTokenAmount bal = CTokenAmount{(*it).first, (*it).second};
+        if (indexed_amounts)
+                ret.pushKV(bal.nTokenId.ToString(), ValueFromAmount(bal.nValue));
+            else
+                ret.push_back(bal.ToString());
+    }
+    return ret;
+}
+
 UniValue utxostoaccount(const JSONRPCRequest& request) {
     CWallet* const pwallet = GetWallet(request);
 
@@ -1279,10 +1376,6 @@ UniValue utxostoaccount(const JSONRPCRequest& request) {
     }
     pwallet->BlockUntilSyncedToCurrentChain();
 
-    if (::ChainActive().Tip()->height < Params().GetConsensus().AMKHeight) {
-        throw JSONRPCError(RPC_TRANSACTION_REJECTED, "No tokenization transaction before block height " + std::to_string(Params().GetConsensus().AMKHeight));
-    }
-
     RPCTypeCheck(request.params, {UniValue::VOBJ, UniValue::VARR}, false);
 
     // decode recipients
@@ -1304,7 +1397,13 @@ UniValue utxostoaccount(const JSONRPCRequest& request) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "zero amounts");
     }
 
-    const auto txVersion = GetTransactionVersion(::ChainActive().Height());
+    int targetHeight;
+    {
+        LOCK(cs_main);
+        targetHeight = ::ChainActive().Height() + 1;
+    }
+
+    const auto txVersion = GetTransactionVersion(targetHeight);
     CMutableTransaction rawTx(txVersion);
 
     for (const auto& kv : toBurn.balances) {
@@ -1322,8 +1421,8 @@ UniValue utxostoaccount(const JSONRPCRequest& request) {
     {
         LOCK(cs_main);
         CCustomCSView mnview_dummy(*pcustomcsview); // don't write into actual DB
-        const auto res = ApplyUtxosToAccountTx(mnview_dummy, CTransaction(rawTx),
-                                               ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, msg}));
+        const auto res = ApplyUtxosToAccountTx(mnview_dummy, CTransaction(rawTx), targetHeight,
+                                               ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, msg}), Params().GetConsensus());
         if (!res.ok) {
             throw JSONRPCError(RPC_INVALID_REQUEST, "Execution test failed:\n" + res.msg);
         }
@@ -1374,10 +1473,6 @@ UniValue accounttoaccount(const JSONRPCRequest& request) {
     }
     pwallet->BlockUntilSyncedToCurrentChain();
 
-    if (::ChainActive().Tip()->height < Params().GetConsensus().AMKHeight) {
-        throw JSONRPCError(RPC_TRANSACTION_REJECTED, "No tokenization transaction before block height " + std::to_string(Params().GetConsensus().AMKHeight));
-    }
-
     RPCTypeCheck(request.params, {UniValue::VSTR, UniValue::VOBJ, UniValue::VARR}, false);
 
     // decode sender and recipients
@@ -1395,7 +1490,13 @@ UniValue accounttoaccount(const JSONRPCRequest& request) {
     CScript scriptMeta;
     scriptMeta << OP_RETURN << ToByteVector(markedMetadata);
 
-    const auto txVersion = GetTransactionVersion(::ChainActive().Height());
+    int targetHeight;
+    {
+        LOCK(cs_main);
+        targetHeight = ::ChainActive().Height() + 1;
+    }
+
+    const auto txVersion = GetTransactionVersion(targetHeight);
     CMutableTransaction rawTx(txVersion);
 
     rawTx.vout.push_back(CTxOut(0, scriptMeta));
@@ -1418,8 +1519,8 @@ UniValue accounttoaccount(const JSONRPCRequest& request) {
     {
         LOCK(cs_main);
         CCustomCSView mnview_dummy(*pcustomcsview); // don't write into actual DB
-        const auto res = ApplyAccountToAccountTx(mnview_dummy, g_chainstate->CoinsTip(), CTransaction(rawTx),
-                                               ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, msg}));
+        const auto res = ApplyAccountToAccountTx(mnview_dummy, g_chainstate->CoinsTip(), CTransaction(rawTx), targetHeight,
+                                               ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, msg}), Params().GetConsensus());
         if (!res.ok) {
             if (res.code == CustomTxErrCodes::NotEnoughBalance) {
                 throw JSONRPCError(RPC_INVALID_REQUEST,
@@ -1476,10 +1577,6 @@ UniValue accounttoutxos(const JSONRPCRequest& request) {
     }
     pwallet->BlockUntilSyncedToCurrentChain();
 
-    if (::ChainActive().Tip()->height < Params().GetConsensus().AMKHeight) {
-        throw JSONRPCError(RPC_TRANSACTION_REJECTED, "No tokenization transaction before block height " + std::to_string(Params().GetConsensus().AMKHeight));
-    }
-
     RPCTypeCheck(request.params, {UniValue::VSTR, UniValue::VOBJ, UniValue::VARR}, false);
 
     // decode sender and recipients
@@ -1498,8 +1595,14 @@ UniValue accounttoutxos(const JSONRPCRequest& request) {
         scriptMeta << OP_RETURN << dummyMetadata;
     }
 
+    int targetHeight;
+    {
+        LOCK(cs_main);
+        targetHeight = ::ChainActive().Height() + 1;
+    }
+
     // auth
-    const auto txVersion = GetTransactionVersion(::ChainActive().Height());
+    const auto txVersion = GetTransactionVersion(targetHeight);
     CMutableTransaction rawTx(txVersion);
     
     CTxDestination ownerDest;
@@ -1543,8 +1646,8 @@ UniValue accounttoutxos(const JSONRPCRequest& request) {
     {
         LOCK(cs_main);
         CCustomCSView mnview_dummy(*pcustomcsview); // don't write into actual DB
-        const auto res = ApplyAccountToUtxosTx(mnview_dummy, g_chainstate->CoinsTip(), CTransaction(rawTx),
-                                                 ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, msg}));
+        const auto res = ApplyAccountToUtxosTx(mnview_dummy, g_chainstate->CoinsTip(), CTransaction(rawTx), targetHeight,
+                                                 ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, msg}), Params().GetConsensus());
         if (!res.ok) {
             if (res.code == CustomTxErrCodes::NotEnoughBalance) {
                 throw JSONRPCError(RPC_INVALID_REQUEST,
@@ -1598,8 +1701,9 @@ static const CRPCCommand commands[] =
     {"tokens",      "listtokens",         &listtokens,         {"pagination", "verbose"}},
     {"tokens",      "gettoken",           &gettoken,           {"key" }},
     {"tokens",      "minttokens",         &minttokens,         {"amounts", "inputs"}},
-    {"accounts",    "listaccounts",       &listaccounts,       {"pagination", "verbose"}},
-    {"accounts",    "getaccount",         &getaccount,         {"owner", "pagination"}},
+    {"accounts",    "listaccounts",       &listaccounts,       {"pagination", "verbose", "indexed_amounts", "is_mine_only"}},
+    {"accounts",    "getaccount",         &getaccount,         {"owner", "pagination", "indexed_amounts"}},
+    {"accounts",    "gettokenbalances",   &gettokenbalances,   {"pagination", "indexed_amounts"}},
     {"accounts",    "utxostoaccount",     &utxostoaccount,     {"amounts", "inputs"}},
     {"accounts",    "accounttoaccount",   &accounttoaccount,   {"from", "to", "inputs"}},
     {"accounts",    "accounttoutxos",     &accounttoutxos,     {"from", "to", "inputs"}},
