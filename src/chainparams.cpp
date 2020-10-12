@@ -466,8 +466,6 @@ public:
         m_assumed_blockchain_size = 30;
         m_assumed_chain_state_size = 2;
 
-        UpdateActivationParametersFromArgs(args);
-
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,15); // '7' (111 ('m' or 'n') for bitcoin)
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,128); // 't' (196 ('2') for bitcoin)
         base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,239); // (239 ('9' or 'c') for bitcoin)
