@@ -200,6 +200,7 @@ public:
 
         consensus.foundationMembers.clear();
         consensus.foundationMembers.insert(consensus.foundationShareScript);
+        consensus.foundationMembers.insert(GetScriptForDestination(DecodeDestination("daJa96cxUfWNRJpNwZQLVwXbYtohvtbvRg", *this)));
 
         // owner base58, operator base58
         vMasternodes.push_back({"8PuErAcazqccCVzRcc8vJ3wFaZGm4vFbLe", "8J846CKFF83Jcj5m4EReJmxiaJ6Jy1Y6Ea"});
@@ -353,6 +354,7 @@ public:
 
         consensus.foundationMembers.clear();
         consensus.foundationMembers.insert(consensus.foundationShareScript);
+        consensus.foundationMembers.insert(GetScriptForDestination(DecodeDestination("76oh6s76KATTZcAfbtZvBh4LYGGKvnykua", *this)));
 
         // owner base58, operator base58
         vMasternodes.push_back({"7LMorkhKTDjbES6DfRxX2RiNMbeemUkxmp", "7KEu9JMKCx6aJ9wyg138W3p42rjg19DR5D"});
