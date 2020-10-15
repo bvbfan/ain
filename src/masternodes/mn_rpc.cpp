@@ -813,12 +813,12 @@ UniValue updatetoken(const JSONRPCRequest& request) {
     const auto txVersion = GetTransactionVersion(targetHeight);
     CMutableTransaction rawTx(txVersion);
 
-    if (targetHeight < Params().GetConsensus().BishanHeight) {
+    if (targetHeight < Params().GetConsensus().BayfrontHeight) {
         if (metaObj.size() > 1 || !metaObj.exists("isDAT")) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Only 'isDAT' flag modification allowed before Bishan fork (<" + std::to_string(Params().GetConsensus().BishanHeight) + ")");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Only 'isDAT' flag modification allowed before Bayfront fork (<" + std::to_string(Params().GetConsensus().BayfrontHeight) + ")");
         }
 
-        // before BishanHeight it needs only founders auth
+        // before BayfrontHeight it needs only founders auth
         for(std::set<CScript>::iterator it = Params().GetConsensus().foundationMembers.begin(); it != Params().GetConsensus().foundationMembers.end() && rawTx.vin.size() == 0; it++)
         {
             if(IsMine(*pwallet, *it) == ISMINE_SPENDABLE)
@@ -837,7 +837,7 @@ UniValue updatetoken(const JSONRPCRequest& request) {
             throw JSONRPCError(RPC_INVALID_REQUEST, "Incorrect Authorization");
     }
     else
-    { // post-bishan auth
+    { // post-bayfront auth
         bool isFoundersToken = Params().GetConsensus().foundationMembers.find(owner) != Params().GetConsensus().foundationMembers.end();
         if (!txInputs.empty()) {
             rawTx.vin = GetInputs(txInputs);
@@ -867,7 +867,7 @@ UniValue updatetoken(const JSONRPCRequest& request) {
     CDataStream metadata(DfTxMarker, SER_NETWORK, PROTOCOL_VERSION);
 
     // tx type and serialized data differ:
-    if (targetHeight < Params().GetConsensus().BishanHeight) {
+    if (targetHeight < Params().GetConsensus().BayfrontHeight) {
         metadata << static_cast<unsigned char>(CustomTxType::UpdateToken)
                  << tokenImpl.creationTx <<  metaObj["isDAT"].getBool();
     }
@@ -888,7 +888,7 @@ UniValue updatetoken(const JSONRPCRequest& request) {
         LOCK(cs_main);
         CCustomCSView mnview_dummy(*pcustomcsview); // don't write into actual DB
         Res res{};
-        if (targetHeight < Params().GetConsensus().BishanHeight) {
+        if (targetHeight < Params().GetConsensus().BayfrontHeight) {
             res = ApplyUpdateTokenTx(mnview_dummy, ::ChainstateActive().CoinsTip(), CTransaction(rawTx), targetHeight,
                                           ToByteVector(CDataStream{SER_NETWORK, PROTOCOL_VERSION, tokenImpl.creationTx, metaObj["isDAT"].getBool()}), Params().GetConsensus());
         }
@@ -1111,7 +1111,7 @@ UniValue minttokens(const JSONRPCRequest& request) {
                     }
                 }
 
-                /// @note that there is no need to handle BishanHeight here cause (in the worst case) it'll be declined at Apply*; the rest parts are compatible
+                /// @note that there is no need to handle BayfrontHeight here cause (in the worst case) it'll be declined at Apply*; the rest parts are compatible
 
                 // use different auth for DAT|nonDAT tokens:
                 // first, try to auth by exect owner
@@ -1710,8 +1710,13 @@ UniValue addpoolliquidity(const JSONRPCRequest& request) {
     rawTx.vout.push_back(CTxOut(0, scriptMeta));
 
     CTxDestination ownerDest;
-    if (!request.params[2].get_array().empty()) {
-        rawTx.vin = GetAuthInputs(pwallet, ownerDest, request.params[2].get_array());
+    UniValue txInputs = request.params[2];
+    if (txInputs.isNull())
+    {
+        txInputs.setArray();
+    }
+    if (!txInputs.get_array().empty()) {
+        rawTx.vin = GetAuthInputs(pwallet, ownerDest, txInputs.get_array());
     } else {
         for (const auto& kv : msg.from) {
             if (!ExtractDestination(kv.first, ownerDest)) {
@@ -1747,25 +1752,25 @@ UniValue removepoolliquidity(const JSONRPCRequest& request) {
                HelpRequiringPassphrase(pwallet) + "\n",
                {
                        {"from", RPCArg::Type::STR, RPCArg::Optional::NO, "The defi address which has tokens"},
-                       {"amount", RPCArg::Type::STR, RPCArg::Optional::NO, "Token amount"},
+                       {"amount", RPCArg::Type::STR, RPCArg::Optional::NO, "Liquidity amount@Liquidity pool symbol"},
                        {"inputs", RPCArg::Type::ARR, RPCArg::Optional::OMITTED_NAMED_ARG,
-                        "A json array of json objects",
-                        {
+                            "A json array of json objects",
+                            {
                                 {"", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "",
-                                 {
-                                         {"txid", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The transaction id"},
-                                         {"vout", RPCArg::Type::NUM, RPCArg::Optional::NO, "The output number"},
-                                 },
+                                    {
+                                        {"txid", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The transaction id"},
+                                        {"vout", RPCArg::Type::NUM, RPCArg::Optional::NO, "The output number"},
+                                    },
                                 },
-                        },
+                            },
                        },
                },
                RPCResult{
                        "\"hash\"                  (string) The hex-encoded hash of broadcasted transaction\n"
                },
                RPCExamples{
-                       HelpExampleCli("removepoolliquidity", "from_address amount []")
-                       + HelpExampleRpc("removepoolliquidity", "from_address amount []")
+                       HelpExampleCli("removepoolliquidity", "from_address 1.0@LpSymbol")
+                       + HelpExampleRpc("removepoolliquidity", "from_address 1.0@LpSymbol")
                },
     }.Check(request);
 
@@ -1804,7 +1809,13 @@ UniValue removepoolliquidity(const JSONRPCRequest& request) {
     if (!ExtractDestination(msg.from, ownerDest)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid owner destination");
     }
-    rawTx.vin = GetAuthInputs(pwallet, ownerDest, request.params[2].get_array());
+
+    UniValue txInputs = request.params[2];
+    if (txInputs.isNull())
+    {
+        txInputs.setArray();
+    }
+    rawTx.vin = GetAuthInputs(pwallet, ownerDest, txInputs.get_array());
 
     // fund
     rawTx = fund(rawTx, request, pwallet);
@@ -2267,6 +2278,12 @@ UniValue createpoolpair(const JSONRPCRequest& request) {
     CMutableTransaction rawTx(txVersion);
     rawTx.vout.push_back(CTxOut(0, scriptMeta));
 
+    UniValue txInputs = request.params[1];
+    if (txInputs.isNull())
+    {
+        txInputs.setArray();
+    }
+
     for(std::set<CScript>::iterator it = Params().GetConsensus().foundationMembers.begin(); it != Params().GetConsensus().foundationMembers.end() && rawTx.vin.size() == 0; it++)
     {
         if(IsMine(*pwallet, *it) == ISMINE_SPENDABLE)
@@ -2276,7 +2293,7 @@ UniValue createpoolpair(const JSONRPCRequest& request) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid destination");
             }
             try {
-                rawTx.vin = GetAuthInputs(pwallet, destination, request.params[1].get_array());
+                rawTx.vin = GetAuthInputs(pwallet, destination, txInputs.get_array());
             }
             catch (const UniValue& objError) {}
         }
@@ -2569,7 +2586,13 @@ UniValue poolswap(const JSONRPCRequest& request) {
     if (!ExtractDestination(poolSwapMsg.from, ownerDest)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid owner destination");
     }
-    rawTx.vin = GetAuthInputs(pwallet, ownerDest, request.params[1].get_array());
+
+    UniValue txInputs = request.params[1];
+    if (txInputs.isNull())
+    {
+        txInputs.setArray();
+    }
+    rawTx.vin = GetAuthInputs(pwallet, ownerDest, txInputs.get_array());
 
     // fund
     rawTx = fund(rawTx, request, pwallet);
