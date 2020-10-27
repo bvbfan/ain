@@ -157,13 +157,10 @@ CAmount CPoolPair::slopeSwap(CAmount unswapped, CAmount &poolFrom, CAmount &pool
     arith_uint256 poolF = arith_uint256(poolFrom);
     arith_uint256 poolT = arith_uint256(poolTo);
     arith_uint256 swapped = 0;
-    CAmount chunk = poolFrom/SLOPE_SWAP_RATE < unswapped ? poolFrom/SLOPE_SWAP_RATE : unswapped;
     while (unswapped > 0) {
-        //arith_uint256 stepFrom = std::min(poolFrom/1000, unswapped); // 0.1%
-        CAmount stepFrom = std::min(chunk, unswapped);
-        arith_uint256 stepFrom256(stepFrom);
-        arith_uint256 stepTo = poolT * stepFrom256 / poolF;
-        poolF += stepFrom256;
+        CAmount stepFrom = std::min(poolFrom/1000, unswapped); // 0.1%
+        CAmount stepTo = poolT * stepFrom / poolF;
+        poolF += stepFrom;
         poolT -= stepTo;
         unswapped -= stepFrom;
         swapped += stepTo;
