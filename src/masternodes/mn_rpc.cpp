@@ -2716,6 +2716,115 @@ UniValue listpoolshares(const JSONRPCRequest& request) {
     return ret;
 }
 
+UniValue listaccounthistory(const JSONRPCRequest& request) {
+    RPCHelpMan{"listaccounthistory",
+               "\nReturns information about pool shares.\n",
+               {
+                        {"pagination", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "",
+                            {
+                                 {"start", RPCArg::Type::NUM, RPCArg::Optional::OMITTED,
+                                  "Optional first key to iterate from, in lexicographical order."},
+                                 {"including_start", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED,
+                                  "If true, then iterate including starting position. False by default"},
+                                 {"limit", RPCArg::Type::NUM, RPCArg::Optional::OMITTED,
+                                  "Maximum number of pools to return, 100 by default"},
+                            },
+                        },
+//                        {"verbose", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED,
+//                                    "Flag for verbose list (default = true), otherwise only % are shown."},
+               },
+               RPCResult{
+                       "{id:{...},...}     (array) Json object with pools information\n"
+               },
+               RPCExamples{
+                       HelpExampleCli("listpoolshares", "{\"start\":128} False")
+                       + HelpExampleRpc("listpoolshares", "{\"start\":128} False")
+               },
+    }.Check(request);
+
+    bool verbose = true;
+    if (request.params.size() > 1) {
+        verbose = request.params[1].getBool();
+    }
+
+    // parse pagination
+    size_t limit = 100;
+    DCT_ID start{0};
+    bool including_start = true;
+    {
+        if (request.params.size() > 0) {
+            UniValue paginationObj = request.params[0].get_obj();
+            if (!paginationObj["limit"].isNull()) {
+                limit = (size_t) paginationObj["limit"].get_int64();
+            }
+            if (!paginationObj["start"].isNull()) {
+                including_start = false;
+                start.v = (uint32_t) paginationObj["start"].get_int();
+            }
+            if (!paginationObj["including_start"].isNull()) {
+                including_start = paginationObj["including_start"].getBool();
+            }
+            if (!including_start) {
+                ++start.v;
+            }
+        }
+        if (limit == 0) {
+            limit = std::numeric_limits<decltype(limit)>::max();
+        }
+    }
+
+    LOCK(cs_main);
+
+    AccountHistoryKey startKey{ CScript{}, 0, 0 };
+//    startKey.poolID = start;
+//    startKey.owner = CScript(0);
+
+//    CScript prevOwner{};
+    UniValue ret(UniValue::VOBJ);
+    size_t i = 0;
+    pcustomcsview->ForEachAccountHistory([&](CScript const & owner, uint32_t height, uint32_t txn, uint256 const & txid, TAmounts const & diffs) {
+        UniValue obj(UniValue::VOBJ);
+//        obj.pushKV("debugKey", i);
+
+//        if (owner != prevOwner) {
+
+            UniValue ownerObj(UniValue::VOBJ);
+            ScriptPubKeyToUniv(owner, ownerObj, true);
+                if (ownerObj["addresses"].isArray() && !ownerObj["addresses"].get_array().empty()) {
+                    ownerObj = ownerObj["addresses"].get_array().getValues()[0];
+                } else {
+                    ownerObj = {UniValue::VSTR};
+                    ownerObj.setStr(owner.GetHex());
+                }
+
+//            ret.pushKV("key", owner.GetHex() + "@" + amount.nTokenId.ToString());
+            obj.pushKV("owner", ownerObj);
+
+
+//        }
+        obj.pushKV("blockHeight", (int) height);
+        obj.pushKV("txn", (int) txn);
+        obj.pushKV("txid", txid.ToString());
+
+        UniValue diffsObj(UniValue::VARR);
+//        UniValue diffsObj(UniValue::VOBJ);
+        for (auto diff : diffs) {
+//            diffsObj.pushKV(diff.first.ToString(), ValueFromAmount(diff.second));
+            diffsObj.push_back(/*(diff.second < 0 ? "-" : "+") + */CTokenAmount{ diff.first, diff.second }.ToString());
+        }
+        obj.pushKV("diffs", diffsObj);
+
+        ret.pushKV(std::to_string(i), obj);
+
+        ++i;
+
+        limit--;
+        return limit != 0;
+    }, startKey);
+
+    return ret;
+}
+
 UniValue listcommunitybalances(const JSONRPCRequest& request) {
     RPCHelpMan{"listcommunitybalances",
                "\nReturns information about all community balances.\n",
@@ -2888,6 +2997,7 @@ static const CRPCCommand commands[] =
     {"poolpair",    "updatepoolpair",     &updatepoolpair,     {"metadata", "inputs"}},
     {"poolpair",    "poolswap",           &poolswap,           {"metadata", "inputs"}},
     {"poolpair",    "listpoolshares",     &listpoolshares,     {"pagination", "verbose"}},
+    {"accounts",    "listaccounthistory", &listaccounthistory, {"pagination"}},
     {"accounts",    "listcommunitybalances", &listcommunitybalances, {}},
     {"blockchain",  "setgov",             &setgov,             {"variables", "inputs"}},
     {"blockchain",  "getgov",             &getgov,             {"name"}},

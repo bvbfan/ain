@@ -221,4 +221,21 @@ struct BalanceKey {
     }
 };
 
+struct AccountHistoryKey {
+    CScript owner;
+    uint32_t blockHeight;
+    uint32_t txn; // for order in block
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(owner);
+        READWRITE(blockHeight);
+        READWRITE(WrapBigEndian(blockHeight));
+        READWRITE(txn);
+//        READWRITE(WrapBigEndian(txn));
+    }
+};
+
 #endif //DEFI_MASTERNODES_BALANCES_H

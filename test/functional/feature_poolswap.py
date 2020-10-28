@@ -212,6 +212,8 @@ class PoolPairTest (DefiTestFramework):
             errorString = e.error['message']
         assert("Price is higher than indicated." in errorString)
 
+        print("DEBUG", self.nodes[0].listaccounthistory())
+
         # REVERTING:
         #========================
         print ("Reverting...")

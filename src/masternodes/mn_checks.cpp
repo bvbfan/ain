@@ -115,7 +115,7 @@ bool HasFoundationAuth(CTransaction const & tx, CCoinsViewCache const & coins, C
     return false;
 }
 
-Res ApplyCustomTx(CCustomCSView & base_mnview, CCoinsViewCache const & coins, CTransaction const & tx, Consensus::Params const & consensusParams, uint32_t height, bool isCheck)
+Res ApplyCustomTx(CCustomCSView & base_mnview, CCoinsViewCache const & coins, CTransaction const & tx, Consensus::Params const & consensusParams, uint32_t height, uint32_t txn, bool isCheck)
 {
     Res res = Res::Ok();
 
@@ -195,6 +195,7 @@ Res ApplyCustomTx(CCustomCSView & base_mnview, CCoinsViewCache const & coins, CT
 
     // construct undo
     auto& flushable = dynamic_cast<CFlushableStorageKV&>(mnview.GetRaw());
+    mnview.TrackAffectedAccounts(base_mnview.GetRaw(), flushable.GetRaw(), height, txn, tx.GetHash());
     auto undo = CUndo::Construct(base_mnview.GetRaw(), flushable.GetRaw());
     // flush changes
     mnview.Flush();
