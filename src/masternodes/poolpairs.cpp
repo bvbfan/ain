@@ -159,10 +159,10 @@ CAmount CPoolPair::slopeSwap(CAmount unswapped, CAmount &poolFrom, CAmount &pool
     arith_uint256 swapped = 0;
     while (unswapped > 0) {
         CAmount stepFrom = std::min(poolFrom/1000, unswapped); // 0.1%
-        CAmount stepTo = poolT * stepFrom / poolF;
-        poolF += stepFrom;
+        arith_uint256 stepTo = poolT * arith_uint256(stepFrom) / poolF;
+        poolF += arith_uint256(stepFrom);
         poolT -= stepTo;
-        unswapped -= stepFrom;
+        unswapped -= CAmount(stepFrom);
         swapped += stepTo;
     }
     poolFrom = poolF.GetLow64();
